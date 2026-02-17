@@ -317,12 +317,21 @@ def generar_certificado(request, sitting_id):
         pos_fecha = (495, 207)
         pos_nombre_usuario = (525, 252)
         pos_codigo_certificado = (680, 454.5)
+    elif sitting.quiz.course.code == "0019":
+        plantilla_path = os.path.join(settings.BASE_DIR, 'static', 'pdfs', 'certificado_0010.pdf')
+        # Personalización de posiciones para este curso
+        pos_nombre_estudiante = 285
+        pos_puntaje = (472, 164)
+        pos_fecha = (450, 195.5)
+        pos_nombre_usuario = (525, 252)
+        pos_codigo_certificado = (680, 454.5)
     else:
         plantilla_path = os.path.join(settings.BASE_DIR, 'static', 'pdfs', 'certificado_default.pdf')
         pos_nombre_estudiante = 430
         pos_puntaje = (479, 198)
         pos_fecha = (585, 220)
         pos_nombre_usuario = (485, 273)
+    
 
     # Crear un buffer de memoria para el contenido que vamos a superponer
     buffer = io.BytesIO()
