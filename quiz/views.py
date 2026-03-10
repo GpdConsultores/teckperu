@@ -43,7 +43,7 @@ from django.views.generic import (
     UpdateView,
 )
 
-from accounts.decorators import lecturer_required
+from accounts.decorators import admin_required, lecturer_required
 from .forms import (
     EssayForm,
     MCQuestionForm,
@@ -62,6 +62,13 @@ from .models import (
 )
 from course.models import CourseAllocation
 from django.contrib.auth.models import User
+
+from .services.certification_renewal import (
+    can_retake_after_expiration,
+    approve_renewal as approve_renewal_service,
+    get_certificate_status,
+    RenewalNotEligibleError,
+)
 
 
 # ########################################################
@@ -717,13 +724,18 @@ def quiz_list(request, slug):
                 if approved_sitting:
                     quiz.user_status = "approved"
                     quiz.user_sitting = approved_sitting
+                    quiz.certificate_status = get_certificate_status(
+                        request.user, approved_sitting
+                    )
                 else:
                     quiz.user_status = "failed"
                     quiz.user_sitting = latest_sitting
+                    quiz.certificate_status = None
             else:
                 quiz.user_status = "not_attempted"
                 quiz.user_sitting = None
-    
+                quiz.certificate_status = None
+
     return render(
         request, "quiz/quiz_list.html", {"quizzes": quizzes, "course": course}
     )
@@ -800,9 +812,14 @@ class QuizUserProgressView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         progress, _ = Progress.objects.get_or_create(user=self.request.user)
+        exams = progress.show_all_exams()
+        for exam in exams:
+            exam.certificate_status = get_certificate_status(
+                self.request.user, exam
+            )
         context["cat_scores"] = progress.list_all_cat_scores
-        context["exams"] = progress.show_all_exams()
-        context["exams_counter"] = len(context["exams"])
+        context["exams"] = exams
+        context["exams_counter"] = len(exams)
         return context
 
 
@@ -1001,13 +1018,17 @@ class QuizTake(FormView):
                 course=self.course,
                 complete=True
             ).first()
-            
+
             if approved_sitting and approved_sitting.check_if_passed:
-                messages.info(
-                    request,
-                    "Ya has aprobado este examen. No puedes volver a tomarlo.",
-                )
-                return redirect("quiz_index", slug=self.course.slug)
+                # Excepción: renovación aprobada por admin (certificado vencido)
+                if not can_retake_after_expiration(
+                    request.user, self.quiz, self.course
+                ):
+                    messages.info(
+                        request,
+                        "Ya has aprobado este examen. No puedes volver a tomarlo.",
+                    )
+                    return redirect("quiz_index", slug=self.course.slug)
 
         self.sitting = Sitting.objects.user_sitting(
             request.user, self.quiz, self.course
@@ -1173,7 +1194,58 @@ def buscar_usuarios_ajax(request):
             )[:10]
             data = [{'id': user.id, 'text': f"{user.first_name} {user.last_name} ({user.username})"} for user in users]
             return JsonResponse({'results': data})
-    return JsonResponse({'results': []})
+    return JsonResponse({"results": []})
+
+
+def _safe_redirect_url(request, url):
+    """Valida que la URL de redirección sea segura (evita open redirect)."""
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    if not url or not str(url).strip():
+        return None
+    url = str(url).strip()
+    allowed_hosts = {request.get_host(), *settings.ALLOWED_HOSTS}
+    if url_has_allowed_host_and_scheme(url, allowed_hosts=allowed_hosts):
+        return url
+    return None
+
+
+@login_required
+@admin_required
+def approve_renewal(request):
+    """
+    Vista para que el admin apruebe la renovación de certificación.
+    POST con student_id y course_id. Valida elegibilidad en backend antes de crear.
+    """
+    if request.method != "POST":
+        raise Http404
+
+    from accounts.models import Student
+
+    student_id = request.POST.get("student_id")
+    course_id = request.POST.get("course_id")
+    redirect_url = _safe_redirect_url(request, request.POST.get("next", ""))
+
+    if not student_id or not course_id:
+        messages.error(request, _("Datos incompletos para aprobar la renovación."))
+        return redirect(redirect_url) if redirect_url else redirect("student_list")
+
+    student = get_object_or_404(Student, pk=student_id)
+    course = get_object_or_404(Course, pk=course_id)
+
+    try:
+        approve_renewal_service(student, course, approved_by=request.user)
+        messages.success(
+            request,
+            _("Renovación aprobada. El trabajador puede volver a tomar el examen."),
+        )
+    except RenewalNotEligibleError as e:
+        messages.error(request, str(e.message))
+
+    if redirect_url:
+        return redirect(redirect_url)
+    return redirect("student_edit", pk=student.student_id)
+
 
 @login_required
 def quiz_retake(request, sitting_id):
@@ -1194,13 +1266,21 @@ def quiz_retake(request, sitting_id):
     
     # Verificar si el intento encontrado está aprobado
     if approved_sitting and approved_sitting.check_if_passed:
-        messages.error(request, "No puedes reintentar un examen que ya has aprobado.")
-        return redirect('quiz_progress')
-    
-    # Verificar que el examen no sea de un solo intento
-    if previous_sitting.quiz.single_attempt:
+        # Excepción: renovación aprobada por admin (certificado vencido)
+        if not can_retake_after_expiration(
+            request.user, previous_sitting.quiz, previous_sitting.course
+        ):
+            messages.error(
+                request, "No puedes reintentar un examen que ya has aprobado."
+            )
+            return redirect("quiz_progress")
+
+    # Verificar que el examen no sea de un solo intento (salvo renovación)
+    if previous_sitting.quiz.single_attempt and not can_retake_after_expiration(
+        request.user, previous_sitting.quiz, previous_sitting.course
+    ):
         messages.error(request, "Este examen solo permite un intento.")
-        return redirect('quiz_progress')
+        return redirect("quiz_progress")
     
     # Verificar si ya existe un Sitting incompleto para este usuario y examen
     existing_sitting = Sitting.objects.filter(

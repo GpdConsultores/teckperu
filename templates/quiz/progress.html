@@ -235,10 +235,17 @@
                                 </td>
                                 <td class="text-center">
                                     {% if exam.fecha_validez_certificado %}
+                                        {% if exam.certificate_status.expired %}
+                                        <div class="date-info text-warning">
+                                            <i class="fas fa-calendar-times"></i>
+                                            <span>{% trans "Vencido" %} ({{ exam.fecha_validez_certificado|date:"d/m/Y" }})</span>
+                                        </div>
+                                        {% else %}
                                         <div class="date-info">
                                             <i class="fas fa-calendar-alt"></i>
                                             <span>{{ exam.fecha_validez_certificado|date:"d/m/Y" }}</span>
                                         </div>
+                                        {% endif %}
                                     {% else %}
                                         <span class="text-muted">
                                             <i class="fas fa-minus"></i>
@@ -249,6 +256,17 @@
                                 <td class="text-center">
                                     <div class="action-buttons">
                                         {% if exam.check_if_passed %}
+                                            {% if exam.certificate_status.expired and exam.certificate_status.can_retake %}
+                                            <a href="{% url 'quiz_take' slug=exam.quiz.slug %}" class="btn btn-outline-primary">
+                                                <i class="fas fa-redo me-1"></i>
+                                                {% trans "Tomar examen (renovación)" %}
+                                            </a>
+                                            {% elif exam.certificate_status.expired %}
+                                            <span class="text-muted small">
+                                                <i class="fas fa-info-circle me-1"></i>
+                                                {% trans "Certificado vencido. Contacta al administrador." %}
+                                            </span>
+                                            {% else %}
                                             <div class="btn-group-vertical">
                                                 <a href="{% url 'generar_certificado' exam.id %}" 
                                                    class="btn btn-certificate">
@@ -266,6 +284,7 @@
                                                     </button>
                                                 {% endif %}
                                             </div>
+                                            {% endif %}
                                         {% else %}
                                             <a href="{% url 'quiz_retake' exam.id %}" 
                                                class="btn btn-retry">

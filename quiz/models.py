@@ -264,7 +264,11 @@ class SittingManager(models.Manager):
             quiz.single_attempt
             and self.filter(user=user, quiz=quiz, course=course, complete=True).exists()
         ):
-            return False
+            # Excepción: renovación aprobada por admin (certificado vencido)
+            from quiz.services.certification_renewal import can_retake_after_expiration
+
+            if not can_retake_after_expiration(user, quiz, course):
+                return False
         try:
             sitting = self.get(user=user, quiz=quiz, course=course, complete=False)
         except Sitting.DoesNotExist:
@@ -553,3 +557,50 @@ class EssayQuestion(Question):
 
     def answer_choice_to_string(self, guess):
         return str(guess)
+
+
+class CertificationRenewal(models.Model):
+    """
+    Registro de aprobación del admin para que un estudiante pueda volver
+    a dar el examen tras el vencimiento del certificado.
+    No modifica historial existente (Sitting se mantiene intacto).
+    """
+    student = models.ForeignKey(
+        "accounts.Student",
+        on_delete=models.CASCADE,
+        related_name="certification_renewals",
+        verbose_name=_("Estudiante"),
+    )
+    course = models.ForeignKey(
+        "course.Course",
+        on_delete=models.CASCADE,
+        related_name="certification_renewals",
+        verbose_name=_("Curso"),
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_certification_renewals",
+        verbose_name=_("Aprobado por"),
+    )
+    approved_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("Fecha de aprobación"),
+    )
+    notes = models.TextField(
+        blank=True,
+        verbose_name=_("Notas"),
+    )
+
+    class Meta:
+        verbose_name = _("Renovación de certificación")
+        verbose_name_plural = _("Renovaciones de certificación")
+        ordering = ["-approved_at"]
+        indexes = [
+            models.Index(fields=["student", "course"]),
+        ]
+
+    def __str__(self):
+        return f"{self.student} - {self.course} ({self.approved_at.date()})"

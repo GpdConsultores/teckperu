@@ -13,6 +13,7 @@ from .models import (
     Choice,
     EssayQuestion,
     Sitting,
+    CertificationRenewal,
 )
 
 
@@ -99,3 +100,15 @@ admin.site.register(MCQuestion, MCQuestionAdmin)
 admin.site.register(Progress, ProgressAdmin)
 admin.site.register(EssayQuestion, EssayQuestionAdmin)
 admin.site.register(Sitting)
+
+
+@admin.register(CertificationRenewal)
+class CertificationRenewalAdmin(admin.ModelAdmin):
+    list_display = ("student", "course", "approved_by", "approved_at")
+    list_filter = ("course", "approved_at")
+    search_fields = (
+        "student__student__username",
+        "student__student__first_name",
+        "student__student__last_name",
+    )
+    readonly_fields = ("approved_at",)

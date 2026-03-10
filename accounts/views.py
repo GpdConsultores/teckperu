@@ -348,10 +348,15 @@ def edit_student(request, pk):
         profile_form = ProfileUpdateForm(instance=student_user)
         student_form = StudentUpdateForm(instance=student_profile)
 
-    return render(request, 'accounts/edit_student.html', {
-        'title': 'Actualizar Trabajador',
-        'profile_form': profile_form,
-        'student_form': student_form,
+    from quiz.services.certification_renewal import get_expired_certs_for_student
+
+    expired_certs = get_expired_certs_for_student(student_profile)
+
+    return render(request, "accounts/edit_student.html", {
+        "title": "Actualizar Trabajador",
+        "profile_form": profile_form,
+        "student_form": student_form,
+        "expired_certs": expired_certs,
     })
 
 

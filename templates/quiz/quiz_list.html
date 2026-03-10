@@ -70,12 +70,27 @@
                             <!-- Ya lo aprobó, mostrar estado -->
                             <div class="w-100 text-center">
                                 <span class="badge bg-success mb-2">{% trans "Aprobado" %}</span>
+                                {% if quiz.certificate_status and quiz.certificate_status.expired %}
+                                <span class="badge bg-warning text-dark mb-2 ms-1" title="{% trans 'Certificado vencido' %}">
+                                    <i class="fas fa-calendar-times me-1"></i>{% trans "Vencido" %}
+                                </span>
+                                {% endif %}
                                 <br>
                                 <small class="text-muted">{{ quiz.user_sitting.get_percent_correct }}% - {{ quiz.user_sitting.end|date:"d/m/Y" }}</small>
                                 <br>
+                                {% if quiz.certificate_status and quiz.certificate_status.expired and quiz.certificate_status.can_retake %}
+                                <a href="{% url 'quiz_take' slug=quiz.slug %}" class="btn btn-sm btn-outline-primary mt-1">
+                                    <i class="fas fa-redo me-1"></i>{% trans "Tomar examen (renovación)" %}
+                                </a>
+                                {% elif quiz.certificate_status and quiz.certificate_status.expired %}
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-info-circle me-1"></i>{% trans "Certificado vencido" %}
+                                </small>
+                                {% else %}
                                 <a href="{% url 'quiz_progress' %}" class="btn btn-sm btn-outline-primary mt-1">
                                     <i class="fas fa-certificate me-1"></i>{% trans "Ver certificado" %}
                                 </a>
+                                {% endif %}
                             </div>
                         {% endif %}
                     {% else %}

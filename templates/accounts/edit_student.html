@@ -101,6 +101,10 @@
         margin-top: 0.5rem;
     }
 
+    .expired-certs-list .list-group-item:last-child {
+        border-bottom: none !important;
+    }
+
     .form-footer {
         padding: 1.5rem 2rem;
         background-color: #f8f9fa;
@@ -157,6 +161,18 @@
 
 {% include 'snippets/messages.html' %}
 
+{% comment %}Formularios de aprobación fuera del form principal para evitar HTML inválido (forms anidados){% endcomment %}
+{% if expired_certs %}
+    {% for item in expired_certs %}
+    <form id="approve-renewal-form-{{ item.course.id }}" method="post" action="{% url 'approve_renewal' %}" class="d-none" aria-hidden="true">
+        {% csrf_token %}
+        <input type="hidden" name="student_id" value="{{ student_form.instance.id }}">
+        <input type="hidden" name="course_id" value="{{ item.course.id }}">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    </form>
+    {% endfor %}
+{% endif %}
+
 <form action="" method="POST" enctype="multipart/form-data" class="form-container">
     {% csrf_token %}
     
@@ -170,6 +186,11 @@
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="cursos-tab" data-bs-toggle="tab" data-bs-target="#cursos-pane" type="button" role="tab" aria-controls="cursos-pane" aria-selected="false"><i class="fas fa-graduation-cap me-2"></i>{% trans 'Gestión de Cursos' %}</button>
         </li>
+        {% if expired_certs %}
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="cursos-vencidos-tab" data-bs-toggle="tab" data-bs-target="#cursos-vencidos-pane" type="button" role="tab" aria-controls="cursos-vencidos-pane" aria-selected="false"><i class="fas fa-calendar-times me-2"></i>{% trans 'Cursos vencidos' %} <span class="badge bg-warning text-dark ms-1">{{ expired_certs|length }}</span></button>
+        </li>
+        {% endif %}
     </ul>
 
     <div class="tab-content">
@@ -198,6 +219,29 @@
                 {{ student_form.courses }}
             </div>
         </div>
+        {% if expired_certs %}
+        <div class="tab-pane fade" id="cursos-vencidos-pane" role="tabpanel" aria-labelledby="cursos-vencidos-tab" tabindex="0">
+            <div class="alert alert-warning border-0 mb-4" role="alert">
+                <h6 class="alert-heading mb-2">
+                    <i class="fas fa-calendar-times me-2"></i>{% trans 'Certificados vencidos' %}
+                </h6>
+                <p class="mb-3 small">{% trans 'Estos cursos tienen certificado vencido. Aprueba la renovación para que el trabajador pueda volver a dar el examen.' %}</p>
+            </div>
+            <div class="list-group list-group-flush expired-certs-list">
+                {% for item in expired_certs %}
+                <div class="list-group-item d-flex justify-content-between align-items-center px-0 border-0 py-2 border-bottom">
+                    <div class="flex-grow-1">
+                        <strong>{{ item.course.title }}</strong>
+                        <small class="text-muted d-block">{% trans 'Vencido desde' %} {{ item.fecha_vencimiento|date:"d/m/Y" }}</small>
+                    </div>
+                    <button type="submit" form="approve-renewal-form-{{ item.course.id }}" class="btn btn-sm btn-outline-primary flex-shrink-0 ms-2">
+                        <i class="fas fa-check me-1"></i>{% trans 'Aprobar renovación' %}
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <div class="form-footer">
@@ -210,20 +254,16 @@
 document.addEventListener('DOMContentLoaded', function () {
     const searchInput = document.getElementById('course-search-input');
     const courseContainer = document.getElementById('course-list-container');
+    if (!searchInput || !courseContainer) return;
+
     const courses = courseContainer.querySelectorAll('.form-check');
-
-    searchInput.addEventListener('keyup', function (e) {
-        const searchTerm = e.target.value.toLowerCase();
-
-        courses.forEach(course => {
-            const label = course.querySelector('label');
+    searchInput.addEventListener('keyup', function () {
+        const searchTerm = searchInput.value.trim().toLowerCase();
+        courses.forEach(function (courseEl) {
+            const label = courseEl.querySelector('label');
             if (label) {
                 const labelText = label.innerText.toLowerCase();
-                if (labelText.includes(searchTerm)) {
-                    course.style.display = '';
-                } else {
-                    course.style.display = 'none';
-                }
+                courseEl.style.display = labelText.includes(searchTerm) ? '' : 'none';
             }
         });
     });
